@@ -124,8 +124,9 @@ public class InterviewRoomController {
 
     @PostMapping("/{roomId}/join")
     @Transactional
-    public ResponseEntity<JoinRoomResponse> joinRoom(@PathVariable String roomId, @RequestBody Map<String, String> request) {
+    public ResponseEntity<?> joinRoom(@PathVariable String roomId, @RequestBody Map<String, String> request) {
         String candidateName = request.get("candidateName");
+        String candidateEmail = request.get("candidateEmail");
         String inviteToken = request.get("inviteToken");
 
         Optional<InterviewRoom> roomOpt = interviewRoomRepository.findById(roomId);
@@ -139,17 +140,41 @@ public class InterviewRoomController {
         if (inviteToken != null && !inviteToken.trim().isEmpty()) {
             Optional<CandidateInvitation> invitationOpt = candidateInvitationRepository.findByInviteToken(inviteToken);
             if (invitationOpt.isEmpty()) {
-                return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+                return joinError(HttpStatus.NOT_FOUND, "邀请链接无效", "INVALID_TOKEN");
             }
 
             CandidateInvitation invitation = invitationOpt.get();
             if (!invitation.getRoomId().equals(roomId)) {
-                return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
+                return joinError(HttpStatus.BAD_REQUEST, "邀请与房间不匹配", "ROOM_MISMATCH");
             }
 
+            // 过期、已撤销、已达次数上限或已被新邀请取代时阻止访问并说明原因
+            if (!invitation.isUsable()) {
+                return joinError(HttpStatus.FORBIDDEN, invitation.getBlockReason(), invitation.getEffectiveStatus());
+            }
+
+            // 邀请链接仅限对应候选人本人使用
+            if (invitation.getCandidateEmail() != null && !invitation.getCandidateEmail().trim().isEmpty()) {
+                if (candidateEmail == null
+                        || !invitation.getCandidateEmail().trim().equalsIgnoreCase(candidateEmail.trim())) {
+                    return joinError(HttpStatus.FORBIDDEN,
+                            "该邀请仅限候选人 " + invitation.getCandidateEmail() + " 本人使用", "CANDIDATE_MISMATCH");
+                }
+            }
+
+            LocalDateTime now = LocalDateTime.now();
+            invitation.setUsedCount(invitation.getUsedCount() + 1);
+            invitation.setLastUsedAt(now);
             invitation.setStatus("JOINED");
-            invitation.setJoinedAt(LocalDateTime.now());
+            if (invitation.getJoinedAt() == null) {
+                invitation.setJoinedAt(now);
+            }
             candidateInvitationRepository.save(invitation);
+
+            // 以邀请中的候选人信息为准，保证与最新邀请关联
+            if (invitation.getCandidateName() != null && !invitation.getCandidateName().trim().isEmpty()) {
+                candidateName = invitation.getCandidateName();
+            }
             message = "Joined via invitation token";
         }
 
@@ -171,6 +196,14 @@ public class InterviewRoomController {
 
         JoinRoomResponse response = new JoinRoomResponse(savedStatus, room, message);
         return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    private ResponseEntity<Map<String, Object>> joinError(HttpStatus status, String message, String reason) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("message", message);
+        body.put("reason", reason);
+        body.put("status", status.value());
+        return ResponseEntity.status(status).body(body);
     }
 
     @PostMapping("/{roomId}/leave")

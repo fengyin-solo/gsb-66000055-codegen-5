@@ -3,7 +3,9 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getInvitationByToken } from '../services/invitationService';
 import { getRoomByCode, getRoomById, joinRoom } from '../services/interviewRoomService';
 import { useInterviewStore } from '../store/interview';
-import type { InterviewRoom, User } from '../types';
+import type { CandidateInvitation, InterviewRoom, User } from '../types';
+
+const TERMINAL_INVITATION_STATUSES = ['EXPIRED', 'REVOKED', 'EXHAUSTED', 'SUPERSEDED'];
 
 export const JoinRoomPage: React.FC = () => {
   const navigate = useNavigate();
@@ -14,6 +16,7 @@ export const JoinRoomPage: React.FC = () => {
   const [candidateEmail, setCandidateEmail] = useState('');
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [tokenFromUrl, setTokenFromUrl] = useState('');
+  const [invitation, setInvitation] = useState<CandidateInvitation | null>(null);
   const [roomInfo, setRoomInfo] = useState<InterviewRoom | null>(null);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
@@ -37,6 +40,7 @@ export const JoinRoomPage: React.FC = () => {
     setError('');
     try {
       const invitation = await getInvitationByToken(token);
+      setInvitation(invitation);
       setCandidateName(invitation.candidateName || '');
       setCandidateEmail(invitation.candidateEmail || '');
       const room = await getRoomById(invitation.roomId);
@@ -95,6 +99,7 @@ export const JoinRoomPage: React.FC = () => {
       const inviteToken = tokenFromUrl || '';
       const result = await joinRoom(roomInfo.id, {
         candidateName: candidateName.trim(),
+        candidateEmail: candidateEmail.trim(),
         inviteToken,
       });
 
@@ -126,6 +131,54 @@ export const JoinRoomPage: React.FC = () => {
         justifyContent: 'center',
       }}>
         <div style={{ color: '#fff', fontSize: '16px' }}>加载中...</div>
+      </div>
+    );
+  }
+
+  // 过期、已撤销、已达次数上限或已被新邀请取代时阻止访问并说明原因
+  const invitationBlocked = invitation !== null && (
+    invitation.usable === false ||
+    TERMINAL_INVITATION_STATUSES.includes(invitation.effectiveStatus || '')
+  );
+
+  if (invitationBlocked) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#0d0d0d',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+      }}>
+        <div style={{
+          background: '#1e1e1e',
+          borderRadius: '8px',
+          padding: '32px',
+          width: '100%',
+          maxWidth: '480px',
+          border: '1px solid #333',
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🚫</div>
+          <h1 style={{ color: '#fff', margin: '0 0 12px 0', fontSize: '22px', fontWeight: 600 }}>
+            无法加入面试
+          </h1>
+          <div style={{
+            color: '#f44336',
+            fontSize: '14px',
+            padding: '12px 16px',
+            background: 'rgba(244,67,54,0.1)',
+            borderRadius: '4px',
+            border: '1px solid rgba(244,67,54,0.3)',
+            marginBottom: '16px',
+          }}>
+            {invitation?.blockReason || '邀请已失效'}
+          </div>
+          <p style={{ color: '#888', fontSize: '13px', margin: 0, lineHeight: 1.6 }}>
+            请联系面试官重新发送邀请链接后再试。
+          </p>
+        </div>
       </div>
     );
   }
@@ -228,20 +281,27 @@ export const JoinRoomPage: React.FC = () => {
               value={candidateEmail}
               onChange={e => setCandidateEmail(e.target.value)}
               placeholder="请输入您的邮箱"
+              readOnly={!!tokenFromUrl}
               style={{
                 width: '100%',
                 padding: '10px 12px',
                 borderRadius: '4px',
                 border: '1px solid #444',
-                background: '#2a2a2a',
-                color: '#fff',
+                background: tokenFromUrl ? '#252525' : '#2a2a2a',
+                color: tokenFromUrl ? '#888' : '#fff',
                 fontSize: '14px',
                 boxSizing: 'border-box',
                 outline: 'none',
+                cursor: tokenFromUrl ? 'not-allowed' : 'text',
               }}
-              onFocus={e => e.target.style.borderColor = '#2196f3'}
+              onFocus={e => { if (!tokenFromUrl) e.target.style.borderColor = '#2196f3'; }}
               onBlur={e => e.target.style.borderColor = '#444'}
             />
+            {tokenFromUrl && (
+              <div style={{ color: '#666', fontSize: '12px', marginTop: '4px' }}>
+                该邀请链接仅限此邮箱对应的候选人使用
+              </div>
+            )}
           </div>
 
           {tokenFromUrl ? (

@@ -57,6 +57,10 @@ export interface User {
   createdAt: string;
 }
 
+export type InvitationEffectiveStatus =
+  | 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'JOINED' | 'LEFT'
+  | 'EXPIRED' | 'REVOKED' | 'EXHAUSTED' | 'SUPERSEDED';
+
 export interface CandidateInvitation {
   id: string;
   roomId: string;
@@ -66,6 +70,20 @@ export interface CandidateInvitation {
   status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'JOINED' | 'LEFT';
   joinedAt?: string;
   createdAt: string;
+  expiresAt?: string;
+  maxUses?: number;
+  usedCount?: number;
+  lastUsedAt?: string;
+  revokedAt?: string;
+  supersededAt?: string;
+  supersededById?: string;
+  effectiveStatus?: InvitationEffectiveStatus;
+  usable?: boolean;
+  expired?: boolean;
+  exhausted?: boolean;
+  blockReason?: string | null;
+  remainingUses?: number | null;
+  inviteLink?: string;
 }
 
 export interface ParticipantStatus {
@@ -116,6 +134,8 @@ export interface InviteCandidateRequest {
   roomId: string;
   candidateName: string;
   candidateEmail: string;
+  expiresInHours?: number;
+  maxUses?: number;
 }
 
 export interface CreateRoomResponse {

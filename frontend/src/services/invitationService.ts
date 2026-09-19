@@ -23,8 +23,8 @@ export function updateInvitationStatus(invitationId: string, status: string): Pr
   });
 }
 
-export function deleteInvitation(invitationId: string): Promise<void> {
-  return request<void>(`/invitations/${invitationId}`, {
+export function revokeInvitation(invitationId: string): Promise<CandidateInvitation> {
+  return request<CandidateInvitation>(`/invitations/${invitationId}`, {
     method: 'DELETE',
   });
 }
