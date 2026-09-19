@@ -169,7 +169,7 @@ export async function mockGetRoomParticipants(roomId: string): Promise<Participa
   return participants;
 }
 
-export async function mockJoinRoom(roomId: string, data: { candidateName: string; inviteToken: string }): Promise<JoinRoomResponse> {
+export async function mockJoinRoom(roomId: string, data: { candidateName: string; candidateEmail?: string; inviteToken: string }): Promise<JoinRoomResponse> {
   await delay(500);
   const rooms = getRoomsCache();
   const index = rooms.findIndex(r => r.id === roomId);

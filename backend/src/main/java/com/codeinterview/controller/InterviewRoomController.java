@@ -6,9 +6,10 @@ import com.codeinterview.dto.WebSocketMessage;
 import com.codeinterview.model.CandidateInvitation;
 import com.codeinterview.model.InterviewRoom;
 import com.codeinterview.model.ParticipantStatus;
-import com.codeinterview.repository.CandidateInvitationRepository;
 import com.codeinterview.repository.InterviewRoomRepository;
 import com.codeinterview.repository.ParticipantStatusRepository;
+import com.codeinterview.service.InvitationService;
+import com.codeinterview.exception.InvitationAccessException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.http.HttpStatus;
@@ -31,10 +32,10 @@ public class InterviewRoomController {
     private InterviewRoomRepository interviewRoomRepository;
 
     @Autowired
-    private CandidateInvitationRepository candidateInvitationRepository;
+    private ParticipantStatusRepository participantStatusRepository;
 
     @Autowired
-    private ParticipantStatusRepository participantStatusRepository;
+    private InvitationService invitationService;
 
     @Autowired
     private SimpMessagingTemplate messagingTemplate;
@@ -126,6 +127,7 @@ public class InterviewRoomController {
     @Transactional
     public ResponseEntity<JoinRoomResponse> joinRoom(@PathVariable String roomId, @RequestBody Map<String, String> request) {
         String candidateName = request.get("candidateName");
+        String candidateEmail = request.get("candidateEmail");
         String inviteToken = request.get("inviteToken");
 
         Optional<InterviewRoom> roomOpt = interviewRoomRepository.findById(roomId);
@@ -137,19 +139,16 @@ public class InterviewRoomController {
         String message = "Joined via room code";
 
         if (inviteToken != null && !inviteToken.trim().isEmpty()) {
-            Optional<CandidateInvitation> invitationOpt = candidateInvitationRepository.findByInviteToken(inviteToken);
-            if (invitationOpt.isEmpty()) {
-                return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+            // 受控访问：房间须仍可进入
+            if ("COMPLETED".equals(room.getStatus()) || "CANCELLED".equals(room.getStatus())) {
+                throw new InvitationAccessException("ROOM_CLOSED", "面试房间已"
+                        + ("COMPLETED".equals(room.getStatus()) ? "结束" : "取消") + "，无法加入");
             }
+            // 校验邀请的有效期、可加入次数、撤销/替换状态及候选人身份，并原子地消耗一次加入次数
+            CandidateInvitation invitation = invitationService.consumeForJoin(roomId, inviteToken, candidateEmail);
 
-            CandidateInvitation invitation = invitationOpt.get();
-            if (!invitation.getRoomId().equals(roomId)) {
-                return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
-            }
-
-            invitation.setStatus("JOINED");
-            invitation.setJoinedAt(LocalDateTime.now());
-            candidateInvitationRepository.save(invitation);
+            // 以邀请中登记的候选人信息为准，避免冒名加入
+            candidateName = invitation.getCandidateName();
             message = "Joined via invitation token";
         }
 

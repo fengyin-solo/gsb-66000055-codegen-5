@@ -1,5 +1,5 @@
 import { request } from './api';
-import type { InviteCandidateRequest, CandidateInvitation } from '../types';
+import type { InviteCandidateRequest, CandidateInvitation, InvitationAccessView } from '../types';
 
 export function createInvitation(data: InviteCandidateRequest): Promise<CandidateInvitation> {
   return request<CandidateInvitation>('/invitations', {
@@ -12,8 +12,9 @@ export function getInvitationsByRoom(roomId: string): Promise<CandidateInvitatio
   return request<CandidateInvitation[]>(`/invitations/room/${roomId}`);
 }
 
-export function getInvitationByToken(token: string): Promise<CandidateInvitation> {
-  return request<CandidateInvitation>(`/invitations/token/${token}`);
+/** 候选人凭邀请链接访问：返回是否可访问及不可访问的原因 */
+export function getInvitationByToken(token: string): Promise<InvitationAccessView> {
+  return request<InvitationAccessView>(`/invitations/token/${token}`);
 }
 
 export function updateInvitationStatus(invitationId: string, status: string): Promise<CandidateInvitation> {
@@ -23,8 +24,13 @@ export function updateInvitationStatus(invitationId: string, status: string): Pr
   });
 }
 
-export function deleteInvitation(invitationId: string): Promise<void> {
-  return request<void>(`/invitations/${invitationId}`, {
-    method: 'DELETE',
+/** 面试官提前失效邀请（撤销，记录保留） */
+export function revokeInvitation(invitationId: string): Promise<CandidateInvitation> {
+  return request<CandidateInvitation>(`/invitations/${invitationId}/revoke`, {
+    method: 'POST',
   });
+}
+
+export function deleteInvitation(invitationId: string): Promise<CandidateInvitation> {
+  return revokeInvitation(invitationId);
 }

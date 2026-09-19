@@ -114,7 +114,7 @@ export async function getRoomParticipants(roomId: string): Promise<ParticipantSt
   }
 }
 
-export async function joinRoom(roomId: string, data: { candidateName: string; inviteToken: string }): Promise<JoinRoomResponse> {
+export async function joinRoom(roomId: string, data: { candidateName: string; candidateEmail?: string; inviteToken: string }): Promise<JoinRoomResponse> {
   if (isUsingMockData()) {
     return mockJoinRoom(roomId, data);
   }

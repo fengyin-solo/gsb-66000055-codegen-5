@@ -1,18 +1,17 @@
 package com.codeinterview.controller;
 
+import com.codeinterview.dto.InvitationAccessView;
 import com.codeinterview.dto.InviteCandidateRequest;
 import com.codeinterview.model.CandidateInvitation;
-import com.codeinterview.model.InterviewRoom;
 import com.codeinterview.repository.CandidateInvitationRepository;
-import com.codeinterview.repository.InterviewRoomRepository;
+import com.codeinterview.service.InvitationService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/invitations")
@@ -23,42 +22,16 @@ public class CandidateInvitationController {
     private CandidateInvitationRepository invitationRepository;
 
     @Autowired
-    private InterviewRoomRepository roomRepository;
+    private InvitationService invitationService;
 
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public Map<String, Object> createInvitation(@RequestBody InviteCandidateRequest request) {
-        InterviewRoom room = roomRepository.findById(request.getRoomId())
-                .orElseThrow(() -> new RuntimeException("房间不存在"));
-
-        if (!"WAITING".equals(room.getStatus())) {
-            throw new RuntimeException("房间状态不是 WAITING，无法发送邀请");
-        }
-
-        String inviteToken = UUID.randomUUID().toString();
-
-        CandidateInvitation invitation = new CandidateInvitation();
-        invitation.setRoomId(request.getRoomId());
-        invitation.setCandidateName(request.getCandidateName());
-        invitation.setCandidateEmail(request.getCandidateEmail());
-        invitation.setInviteToken(inviteToken);
-        invitation.setStatus("PENDING");
-        invitation.setCreatedAt(LocalDateTime.now());
-
-        invitation = invitationRepository.save(invitation);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("id", invitation.getId());
-        response.put("roomId", invitation.getRoomId());
-        response.put("candidateName", invitation.getCandidateName());
-        response.put("candidateEmail", invitation.getCandidateEmail());
-        response.put("inviteToken", invitation.getInviteToken());
-        response.put("status", invitation.getStatus());
-        response.put("createdAt", invitation.getCreatedAt());
-        response.put("inviteLink", "/join?token=" + inviteToken);
-
-        return response;
+        CandidateInvitation invitation = invitationService.createInvitation(request);
+        return toResponse(invitation);
     }
 
+    /** 面试官查看房间的邀请记录（含候选人信息与使用情况） */
     @GetMapping("/room/{roomId}")
     public List<CandidateInvitation> getInvitationsByRoomId(@PathVariable String roomId) {
         return invitationRepository.findByRoomIdOrderByCreatedAtDesc(roomId);
@@ -70,42 +43,40 @@ public class CandidateInvitationController {
                 .orElseThrow(() -> new RuntimeException("邀请不存在"));
     }
 
-    @PutMapping("/{invitationId}/status")
-    public CandidateInvitation updateInvitationStatus(
-            @PathVariable String invitationId,
-            @RequestParam String status) {
-
-        CandidateInvitation invitation = invitationRepository.findById(invitationId)
-                .orElseThrow(() -> new RuntimeException("邀请不存在"));
-
-        if (!List.of("PENDING", "ACCEPTED", "DECLINED", "JOINED", "LEFT").contains(status)) {
-            throw new RuntimeException("无效的状态值");
-        }
-
-        invitation.setStatus(status);
-
-        if ("JOINED".equals(status)) {
-            invitation.setJoinedAt(LocalDateTime.now());
-        }
-
-        return invitationRepository.save(invitation);
+    /** 面试官提前失效邀请（软撤销，记录保留可查） */
+    @PostMapping("/{invitationId}/revoke")
+    public CandidateInvitation revokeInvitation(@PathVariable String invitationId) {
+        return invitationService.revoke(invitationId);
     }
 
-    @GetMapping("/token/{inviteToken}")
-    public CandidateInvitation getInvitationByToken(@PathVariable String inviteToken) {
-        return invitationRepository.findByInviteToken(inviteToken)
-                .orElseThrow(() -> new RuntimeException("无效的邀请token"));
-    }
-
+    /** 兼容旧前端：DELETE 同样执行软撤销而非删除记录 */
     @DeleteMapping("/{invitationId}")
-    public void deleteInvitation(@PathVariable String invitationId) {
-        CandidateInvitation invitation = invitationRepository.findById(invitationId)
-                .orElseThrow(() -> new RuntimeException("邀请不存在"));
+    public CandidateInvitation deleteInvitation(@PathVariable String invitationId) {
+        return invitationService.revoke(invitationId);
+    }
 
-        if (!"PENDING".equals(invitation.getStatus())) {
-            throw new RuntimeException("只有 PENDING 状态的邀请可以撤销");
-        }
+    /**
+     * 候选人凭邀请链接访问。邀请不可用时仍返回 200，
+     * 但 accessible=false 且附带具体原因，前端据此展示阻止页面。
+     */
+    @GetMapping("/token/{inviteToken}")
+    public InvitationAccessView getInvitationByToken(@PathVariable String inviteToken) {
+        return invitationService.getAccessView(inviteToken);
+    }
 
-        invitationRepository.delete(invitation);
+    private Map<String, Object> toResponse(CandidateInvitation invitation) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", invitation.getId());
+        response.put("roomId", invitation.getRoomId());
+        response.put("candidateName", invitation.getCandidateName());
+        response.put("candidateEmail", invitation.getCandidateEmail());
+        response.put("inviteToken", invitation.getInviteToken());
+        response.put("status", invitation.getStatus());
+        response.put("expiresAt", invitation.getExpiresAt());
+        response.put("maxJoinCount", invitation.getMaxJoinCount());
+        response.put("usedJoinCount", invitation.getUsedJoinCount());
+        response.put("createdAt", invitation.getCreatedAt());
+        response.put("inviteLink", "/join?token=" + invitation.getInviteToken());
+        return response;
     }
 }

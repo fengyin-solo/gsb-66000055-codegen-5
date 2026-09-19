@@ -57,15 +57,52 @@ export interface User {
   createdAt: string;
 }
 
+export type InvitationStatus =
+  | 'PENDING'
+  | 'JOINED'
+  | 'EXPIRED'
+  | 'EXHAUSTED'
+  | 'REVOKED'
+  | 'SUPERSEDED';
+
 export interface CandidateInvitation {
   id: string;
   roomId: string;
   candidateName: string;
   candidateEmail: string;
   inviteToken: string;
-  status: 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'JOINED' | 'LEFT';
+  /** 存储状态：PENDING / JOINED / REVOKED / SUPERSEDED */
+  status: InvitationStatus;
+  /** 后端按当前时刻计算出的实际状态（含过期、次数用完） */
+  effectiveStatus?: InvitationStatus;
+  /** 过期时间；为空表示长期有效 */
+  expiresAt?: string | null;
+  /** 可加入次数 */
+  maxJoinCount?: number;
+  /** 已使用次数 */
+  usedJoinCount?: number;
   joinedAt?: string;
+  lastUsedAt?: string;
+  revokedAt?: string;
+  supersededByInvitationId?: string;
   createdAt: string;
+  inviteLink?: string;
+}
+
+/** 候选人凭邀请链接访问时的视图 */
+export interface InvitationAccessView {
+  inviteToken: string;
+  accessible: boolean;
+  effectiveStatus: InvitationStatus;
+  reason?: string;
+  candidateName?: string;
+  candidateEmail?: string;
+  roomId?: string;
+  roomTitle?: string;
+  expiresAt?: string | null;
+  maxJoinCount?: number;
+  usedJoinCount?: number;
+  createdAt?: string;
 }
 
 export interface ParticipantStatus {
@@ -116,7 +153,49 @@ export interface InviteCandidateRequest {
   roomId: string;
   candidateName: string;
   candidateEmail: string;
+  /** 有效期小时数；0 或不传表示长期有效 */
+  validityHours?: number;
+  /** 可加入次数；不传默认 1 */
+  maxJoinCount?: number;
 }
+
+export interface InvitationStatusConfig {
+  value: InvitationStatus;
+  label: string;
+  color: string;
+  /** 该状态的邀请是否还能访问/加入 */
+  accessible: boolean;
+}
+
+export const INVITATION_STATUS_CONFIGS: InvitationStatusConfig[] = [
+  { value: 'PENDING', label: '待使用', color: '#ff9800', accessible: true },
+  { value: 'JOINED', label: '已使用', color: '#2196f3', accessible: true },
+  { value: 'EXPIRED', label: '已过期', color: '#9e9e9e', accessible: false },
+  { value: 'EXHAUSTED', label: '次数已用完', color: '#f44336', accessible: false },
+  { value: 'REVOKED', label: '已撤销', color: '#f44336', accessible: false },
+  { value: 'SUPERSEDED', label: '已补发失效', color: '#9e9e9e', accessible: false },
+];
+
+export const getInvitationStatusConfig = (status: string): InvitationStatusConfig => {
+  return INVITATION_STATUS_CONFIGS.find((s) => s.value === status)
+    || { value: 'PENDING', label: status, color: '#9e9e9e', accessible: false };
+};
+
+/** 邀请被阻止时展示给候选人的原因说明 */
+export const getInvitationBlockedReason = (status: string): string => {
+  switch (status) {
+    case 'EXPIRED':
+      return '邀请已过期，请联系面试官重新发送邀请';
+    case 'EXHAUSTED':
+      return '邀请的可加入次数已用完，请联系面试官重新发送邀请';
+    case 'REVOKED':
+      return '邀请已被面试官撤销，请联系面试官重新发送邀请';
+    case 'SUPERSEDED':
+      return '该邀请已失效，面试官已补发新邀请，请使用最新的邀请链接';
+    default:
+      return '邀请当前不可用，请联系面试官确认';
+  }
+};
 
 export interface CreateRoomResponse {
   room: InterviewRoom;

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { getRoomParticipants, updateRoomStatus, getRoomById, heartbeat } from '../services/interviewRoomService';
 import { subscribeParticipants, sendHeartbeat, connect, disconnect } from '../services/websocketService';
 import { useInterviewStore } from '../store/interview';
-import { ParticipantStatus, getRoomStatusConfig, formatTime } from '../types';
+import { ParticipantStatus, getRoomStatusConfig, getInvitationStatusConfig, formatTime } from '../types';
 
 const formatTimeAgo = (dateString: string): string => {
   const now = new Date().getTime();
@@ -155,8 +155,9 @@ const ParticipantList: React.FC<ParticipantListProps> = ({ roomId }) => {
   }, [participants]);
 
   const getInvitationForParticipant = (participant: ParticipantStatus) => {
+    // invitations 已按发送时间倒序排列，优先关联候选人的最新邀请（补发后旧邀请不会重新关联）
     return invitations.find(
-      (inv) => inv.candidateEmail === participant.userName || inv.candidateName === participant.userName
+      (inv) => inv.candidateName === participant.userName
     );
   };
 
@@ -518,7 +519,7 @@ const ParticipantList: React.FC<ParticipantListProps> = ({ roomId }) => {
                         刚加入
                       </span>
                     )}
-                    {invitation && invitation.status === 'JOINED' && (
+                    {invitation && (invitation.effectiveStatus || invitation.status) === 'JOINED' && (
                       <span style={{
                         color: '#4caf50',
                         fontSize: '14px',
@@ -539,12 +540,14 @@ const ParticipantList: React.FC<ParticipantListProps> = ({ roomId }) => {
                     <span>最后活跃: {formatTime(participant.lastHeartbeat)}</span>
                     {invitation && (
                       <span>
-                        邀请状态: 
+                        邀请状态:
                         <span style={{
-                          color: invitation.status === 'JOINED' ? '#4caf50' : '#ff9800',
+                          color: (invitation.effectiveStatus || invitation.status) === 'JOINED' ? '#4caf50' : '#ff9800',
                           marginLeft: '4px',
                         }}>
-                          {invitation.status === 'JOINED' ? '已加入' : invitation.status}
+                          {(invitation.effectiveStatus || invitation.status) === 'JOINED'
+                            ? `已加入（${invitation.usedJoinCount ?? 1}/${invitation.maxJoinCount ?? 1}）`
+                            : getInvitationStatusConfig(invitation.effectiveStatus || invitation.status).label}
                         </span>
                       </span>
                     )}
